@@ -1,0 +1,17 @@
+[package]
+name = "python"
+version = "0.1.0"
+authors = ["Dominik Miedziński <dominik@mdzn.pl>"]
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0"
+clap = "2.33.0"
+fnv = "1.0.3"
+num-bigint = "0.3"
+python-syntax = { path = "../python-syntax" }
+
+[dependencies.inkwell]
+git = "https://github.com/TheDan64/inkwell"
+rev = "a2db15b0bd1c06d71763585ae10d9ea4e775da0c"
+features = ["llvm11-0"]

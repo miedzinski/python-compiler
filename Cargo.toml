@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "python-syntax",
+    "python",
+    "python-core",
+]

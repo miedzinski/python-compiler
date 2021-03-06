@@ -1,0 +1,12 @@
+[package]
+name = "python-core"
+version = "0.1.0"
+authors = ["Dominik Miedziński <dominik@mdzn.pl>"]
+edition = "2018"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+fnv = "1.0.3"
+num-bigint = "0.3"

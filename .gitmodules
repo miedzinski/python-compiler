@@ -1,0 +1,3 @@
+[submodule "python-syntax"]
+	path = python-syntax
+	url = https://github.com/miedzinski/python-syntax
