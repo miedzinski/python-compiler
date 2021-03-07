@@ -282,18 +282,17 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                             }
                         }).collect::<Result<Vec<_>>>()?;
 
-                        let args_obj = if slots.is_empty() {
-                            self.gen.ref_type().const_null().as_basic_value_enum()
-                        } else {
-                            self.gen.build_list(&slots).ptr().as_basic_value_enum()
-                        };
-                        let vararg_obj = match vararg.is_empty() {
-                            false => self.gen.build_list(&vararg).ptr().as_basic_value_enum(),
-                            _ => self.gen.ref_type().const_null().as_basic_value_enum(),
-                        };
+                        let args_obj = slots
+                            .is_empty()
+                            .then(|| self.gen.ref_type().const_null())
+                            .unwrap_or_else(|| self.gen.build_list(&slots).ptr());
+                        let vararg_obj = vararg
+                            .is_empty()
+                            .then(|| self.gen.ref_type().const_null())
+                            .unwrap_or_else(|| self.gen.build_list(&vararg).ptr());
                         let call_args = [
-                            args_obj,
-                            vararg_obj,
+                            args_obj.as_basic_value_enum(),
+                            vararg_obj.as_basic_value_enum(),
                             self.gen.ref_type().const_null().as_basic_value_enum(), // TODO: kwarg
                         ];
                         let obj = self
@@ -307,6 +306,15 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                                 typ: None,
                             })
                             .unwrap();
+                        for list in [args_obj, vararg_obj].iter() {
+                            if !list.is_null() {
+                                self.gen.builder.build_call(
+                                    self.gen.module.get_function("py_list_decref").unwrap(),
+                                    &[list.as_basic_value_enum()],
+                                    "",
+                                );
+                            }
+                        }
                         Ok(Rc::new(obj))
                     }
                     Object::Class { .. } | Object::Instance { .. } => unimplemented!(),

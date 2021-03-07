@@ -128,6 +128,13 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             None,
         );
         self.module.add_function(
+            "py_list_decref",
+            self.ctx
+                .void_type()
+                .fn_type(&[self.ref_type().as_basic_type_enum()], false),
+            None,
+        );
+        self.module.add_function(
             "py_list_set",
             self.ctx.void_type().fn_type(
                 &[

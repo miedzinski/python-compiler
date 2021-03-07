@@ -133,7 +133,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
                 ast::Expression::Name(ast::Name { id, .. }) => {
                     let ptr = self.gen.builder.build_alloca(self.gen.ref_type(), "");
                     let mut symtable = self.gen.scope().symtable().borrow_mut();
-                    self.gen.builder.build_store(ptr, *value.ptr());
+                    self.gen.builder.build_store(ptr, value.ptr());
                     symtable.insert(id.clone(), value.clone());
                 }
                 _ => unimplemented!(),

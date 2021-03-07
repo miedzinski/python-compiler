@@ -281,6 +281,16 @@ pub extern "C" fn py_list_new(len: usize) -> ObjectRef {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn py_list_decref(mut list: ObjectRef) {
+    if let Object::List(list) = list.deref_mut() {
+        for e in list.iter() {
+            e.dec();
+        }
+    }
+    list.dec();
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn py_list_set(mut list: ObjectRef, idx: usize, item: ObjectRef) {
     if let Object::List(list) = list.deref_mut() {
         let slot = &mut list[idx];

@@ -28,8 +28,8 @@ pub enum Object<'ctx> {
 }
 
 impl<'ctx> Object<'ctx> {
-    pub fn ptr(&self) -> &PointerValue<'ctx> {
-        match self {
+    pub fn ptr(&self) -> PointerValue<'ctx> {
+        match *self {
             Object::Class { ptr, .. }
             | Object::Function { ptr, .. }
             | Object::Instance { ptr, .. } => ptr,
