@@ -329,13 +329,9 @@ pub unsafe extern "C" fn py_string_from_bytes(bytes: *const c_char) -> ObjectRef
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn py_print(
-    _args: ObjectRef,
-    vararg: ObjectRef,
-    _kwarg: ObjectRef,
-) -> ObjectRef {
-    if !vararg.is_null() {
-        if let Object::List(list) = vararg.deref() {
+pub unsafe extern "C" fn py_print(args: ObjectRef) -> ObjectRef {
+    if !args.is_null() {
+        if let Object::List(list) = args.deref() {
             print!(
                 "{}",
                 list.iter()

@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use anyhow::Result;
+use inkwell::types::BasicType;
 use python_syntax::ast;
 use python_syntax::visitor::{self, Accept, Visitor};
 
@@ -83,9 +84,16 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
                 .collect::<Result<Vec<_>>>()?,
             kwarg: node.args.kwarg.as_ref().cloned().map(|x| x.arg),
         };
+        let llvm_args = vec![
+            self.gen.ref_type().as_basic_type_enum();
+            signature.args.len()
+                + signature.kwonlyargs.len()
+                + if signature.vararg.is_some() { 1 } else { 0 }
+                + if signature.kwarg.is_some() { 1 } else { 0 }
+        ];
         let llvm_fun = self.gen.module.add_function(
             &format!("{}#{}", self.name, node.name),
-            self.gen.function_type(),
+            self.gen.ref_type().fn_type(&llvm_args, false),
             None,
         );
         let block = self.gen.ctx.append_basic_block(llvm_fun, "entry");

@@ -264,12 +264,12 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                             }
                         }
 
-                        let slots = slots.into_iter().enumerate().map(|(idx, slot)| {
+                        let mut call_args = slots.into_iter().enumerate().map(|(idx, slot)| {
                             match slot {
-                                Some(arg) => Ok(arg),
+                                Some(arg) => Ok(arg.ptr().as_basic_value_enum()),
                                 None => {
                                     let param = signature.nth(idx).unwrap();
-                                    param.default.as_ref().cloned().with_context(|| {
+                                    param.default.as_ref().map(|x| x.ptr().as_basic_value_enum()).with_context(|| {
                                         format!(
                                             "{}() missing required argument '{}' (line {} column {})",
                                             id,
@@ -282,19 +282,15 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                             }
                         }).collect::<Result<Vec<_>>>()?;
 
-                        let args_obj = slots
-                            .is_empty()
-                            .then(|| self.gen.ref_type().const_null())
-                            .unwrap_or_else(|| self.gen.build_list(&slots).ptr());
-                        let vararg_obj = vararg
-                            .is_empty()
-                            .then(|| self.gen.ref_type().const_null())
-                            .unwrap_or_else(|| self.gen.build_list(&vararg).ptr());
-                        let call_args = [
-                            args_obj.as_basic_value_enum(),
-                            vararg_obj.as_basic_value_enum(),
-                            self.gen.ref_type().const_null().as_basic_value_enum(), // TODO: kwarg
-                        ];
+                        let vararg_obj = signature.vararg.is_some().then(|| {
+                            let list = self.gen.build_list(&vararg).ptr().as_basic_value_enum();
+                            call_args.push(list);
+                            list
+                        });
+                        if signature.kwarg.is_some() {
+                            // TODO: kwarg
+                            call_args.push(self.gen.ref_type().const_null().as_basic_value_enum());
+                        }
                         let obj = self
                             .gen
                             .builder
@@ -306,14 +302,12 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                                 typ: None,
                             })
                             .unwrap();
-                        for list in [args_obj, vararg_obj].iter() {
-                            if !list.is_null() {
-                                self.gen.builder.build_call(
-                                    self.gen.module.get_function("py_list_decref").unwrap(),
-                                    &[list.as_basic_value_enum()],
-                                    "",
-                                );
-                            }
+                        if let Some(vararg_obj) = vararg_obj {
+                            self.gen.builder.build_call(
+                                self.gen.module.get_function("py_list_decref").unwrap(),
+                                &[vararg_obj],
+                                "",
+                            );
                         }
                         Ok(Rc::new(obj))
                     }

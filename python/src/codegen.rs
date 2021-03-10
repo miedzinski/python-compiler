@@ -12,7 +12,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
-use inkwell::types::{BasicType, FunctionType, IntType, PointerType};
+use inkwell::types::{BasicType, IntType, PointerType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use inkwell::AddressSpace;
 use python_syntax::parser::parse_module;
@@ -191,8 +191,12 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             ),
             None,
         );
-        self.module
-            .add_function("py_print", self.function_type(), None);
+        self.module.add_function(
+            "py_print",
+            self.ref_type()
+                .fn_type(&[self.ref_type().as_basic_type_enum()], false),
+            None,
+        );
     }
 
     fn setup_builtins(&self) {
@@ -251,11 +255,6 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
 
     pub fn ref_type(&self) -> PointerType<'ctx> {
         self.ctx.i8_type().ptr_type(AddressSpace::Generic)
-    }
-
-    pub fn function_type(&self) -> FunctionType<'ctx> {
-        self.ref_type()
-            .fn_type(&[self.ref_type().as_basic_type_enum(); 3], false)
     }
 
     pub fn scope(&self) -> &Scope<'ctx> {
