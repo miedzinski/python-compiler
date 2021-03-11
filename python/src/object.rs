@@ -5,21 +5,21 @@ use fnv::FnvHashMap;
 use inkwell::values::PointerValue;
 use python_syntax::ast;
 
-pub type SymbolTable<'ctx> = RefCell<FnvHashMap<String, Rc<Object<'ctx>>>>;
+pub type SymbolTable<'ctx> = FnvHashMap<String, Rc<Object<'ctx>>>;
 
 pub enum Object<'ctx> {
     Module {
-        symtable: SymbolTable<'ctx>,
+        symtable: RefCell<SymbolTable<'ctx>>,
     },
     Class {
         ptr: PointerValue<'ctx>,
         def: ast::ClassDef,
-        symtable: SymbolTable<'ctx>,
+        symtable: RefCell<SymbolTable<'ctx>>,
     },
     Function {
         ptr: PointerValue<'ctx>,
         signature: Signature<'ctx>,
-        symtable: SymbolTable<'ctx>,
+        symtable: RefCell<SymbolTable<'ctx>>,
     },
     Instance {
         ptr: PointerValue<'ctx>,
@@ -57,10 +57,14 @@ impl<'ctx> Signature<'ctx> {
             .ok()
     }
 
-    pub fn nth(&self, n: usize) -> Option<&Parameter<'ctx>> {
+    pub fn nth_slot(&self, n: usize) -> Option<&Parameter<'ctx>> {
         self.args
             .get(n)
             .or_else(|| self.kwonlyargs.get(n - self.args.len()))
+    }
+
+    pub fn slots(&self) -> usize {
+        self.args.len() + self.kwonlyargs.len()
     }
 }
 

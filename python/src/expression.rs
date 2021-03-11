@@ -222,8 +222,7 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                 let fun_obj = node.func.accept(self)?;
                 match &*fun_obj {
                     Object::Function { ptr, signature, .. } => {
-                        let mut slots =
-                            vec![None; signature.args.len() + signature.kwonlyargs.len()];
+                        let mut slots = vec![None; signature.slots()];
                         if args.len() > signature.args.len() && signature.vararg.is_none() {
                             bail!(
                                 "{}() takes {} positional arguments but {} were given (line {} column {})",
@@ -268,7 +267,7 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                             match slot {
                                 Some(arg) => Ok(arg.ptr().as_basic_value_enum()),
                                 None => {
-                                    let param = signature.nth(idx).unwrap();
+                                    let param = signature.nth_slot(idx).unwrap();
                                     param.default.as_ref().map(|x| x.ptr().as_basic_value_enum()).with_context(|| {
                                         format!(
                                             "{}() missing required argument '{}' (line {} column {})",

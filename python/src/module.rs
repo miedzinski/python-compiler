@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -28,7 +29,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         let block = self.gen.ctx.append_basic_block(fun, "entry");
         self.gen.builder.position_at_end(block);
         let module = Rc::new(Object::Module {
-            symtable: SymbolTable::default(),
+            symtable: RefCell::default(),
         });
         let scope = Scope::new(block, module.clone());
         {
@@ -41,9 +42,8 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         for e in &node.body {
             e.accept(self)?;
         }
-        let scope = self.gen.stack.pop().unwrap();
+        self.gen.stack.pop().unwrap();
         self.gen.builder.build_return(None);
-        self.gen.builder.position_at_end(scope.block);
         Ok(())
     }
 
@@ -86,30 +86,70 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         };
         let llvm_args = vec![
             self.gen.ref_type().as_basic_type_enum();
-            signature.args.len()
-                + signature.kwonlyargs.len()
+            signature.slots()
                 + if signature.vararg.is_some() { 1 } else { 0 }
                 + if signature.kwarg.is_some() { 1 } else { 0 }
         ];
         let llvm_fun = self.gen.module.add_function(
-            &format!("{}#{}", self.name, node.name),
+            &format!("{}${}", self.name, node.name),
             self.gen.ref_type().fn_type(&llvm_args, false),
             None,
         );
         let block = self.gen.ctx.append_basic_block(llvm_fun, "entry");
+        self.gen.builder.position_at_end(block);
+        let mut symtable = SymbolTable::default();
+        for (idx, param) in llvm_fun
+            .get_param_iter()
+            .enumerate()
+            .take(signature.slots())
+        {
+            let obj = Object::Instance {
+                ptr: param.into_pointer_value(),
+                typ: None,
+            };
+            let name = signature.nth_slot(idx).map(|x| x.name.clone()).unwrap();
+            symtable.insert(name, Rc::new(obj));
+        }
+        if let Some(name) = &signature.vararg {
+            let param = llvm_fun.get_nth_param(signature.slots() as u32).unwrap();
+            let obj = Object::Instance {
+                ptr: param.into_pointer_value(),
+                typ: None,
+            };
+            symtable.insert(name.clone(), Rc::new(obj));
+        }
+        if let Some(name) = &signature.kwarg {
+            let param = llvm_fun
+                .get_nth_param(signature.slots() as u32 + 1)
+                .unwrap();
+            let obj = Object::Instance {
+                ptr: param.into_pointer_value(),
+                typ: None,
+            };
+            symtable.insert(name.clone(), Rc::new(obj));
+        }
         let fun = Rc::new(Object::Function {
             ptr: llvm_fun.as_global_value().as_pointer_value(),
             signature,
-            symtable: SymbolTable::default(),
+            symtable: RefCell::new(symtable),
         });
+        {
+            self.gen
+                .scope()
+                .symtable()
+                .borrow_mut()
+                .insert(node.name.to_string(), fun.clone());
+        }
         let scope = Scope::new(block, fun);
         self.gen.stack.push(scope);
         for e in &node.body {
             e.accept(self)?;
         }
-        let scope = self.gen.stack.pop().unwrap();
-        self.gen.builder.build_return(None);
-        self.gen.builder.position_at_end(scope.block);
+        self.gen.stack.pop().unwrap();
+        self.gen
+            .builder
+            .build_return(Some(&self.gen.build_load_none().ptr()));
+        self.gen.builder.position_at_end(self.gen.scope().block);
         Ok(())
     }
 

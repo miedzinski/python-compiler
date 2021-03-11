@@ -41,7 +41,7 @@ impl<'ctx> Scope<'ctx> {
         Scope { block, object }
     }
 
-    pub fn symtable(&self) -> &SymbolTable<'ctx> {
+    pub fn symtable(&self) -> &RefCell<SymbolTable<'ctx>> {
         match &*self.object {
             Object::Module { symtable, .. }
             | Object::Function { symtable, .. }
@@ -56,7 +56,7 @@ pub struct Codegen<'l, 'ctx> {
     pub builder: &'l Builder<'ctx>,
     pub module: &'l Module<'ctx>,
     pub target: &'l TargetData,
-    pub modules: SymbolTable<'ctx>,
+    pub modules: RefCell<SymbolTable<'ctx>>,
     pub stack: Vec<Scope<'ctx>>,
 }
 
@@ -72,7 +72,7 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             builder,
             module,
             target,
-            modules: SymbolTable::default(),
+            modules: RefCell::default(),
             stack: vec![],
         }
     }
@@ -216,7 +216,7 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
                     kwonlyargs: vec![],
                     kwarg: None,
                 },
-                symtable: SymbolTable::default(),
+                symtable: RefCell::default(),
             }),
         );
         let module = Rc::new(Object::Module {
@@ -259,6 +259,17 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
 
     pub fn scope(&self) -> &Scope<'ctx> {
         self.stack.last().unwrap()
+    }
+
+    pub fn build_load_none(&self) -> Rc<Object<'ctx>> {
+        let ptr = self.module.get_global("py_none").unwrap();
+        let obj = self.builder.build_load(ptr.as_pointer_value(), "");
+        self.builder
+            .build_call(self.module.get_function("py_incref").unwrap(), &[obj], "");
+        Rc::new(Object::Instance {
+            ptr: obj.into_pointer_value(),
+            typ: None,
+        })
     }
 
     pub fn build_builtin_call(
