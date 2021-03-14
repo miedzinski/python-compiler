@@ -13,7 +13,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
 use inkwell::types::{BasicType, IntType, PointerType};
-use inkwell::values::{BasicValue, BasicValueEnum};
+use inkwell::values::{BasicValue, BasicValueEnum, InstructionOpcode};
 use inkwell::AddressSpace;
 use python_syntax::parser::parse_module;
 use python_syntax::visitor::Visitor;
@@ -102,16 +102,7 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
         self.module
             .add_function("py_init", self.ctx.void_type().fn_type(&[], false), None);
         self.module.add_function(
-            "py_incref",
-            self.ctx
-                .void_type()
-                .fn_type(&[self.ref_type().as_basic_type_enum()], false),
-            None,
-        );
-        self.module
-            .add_function("py_decref", self.ctx.void_type().fn_type(&[], false), None);
-        self.module.add_function(
-            "py_object_add",
+            "py_add",
             self.ref_type().fn_type(
                 &[
                     self.ref_type().as_basic_type_enum(),
@@ -121,33 +112,6 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             ),
             None,
         );
-        self.module.add_function(
-            "py_list_new",
-            self.ref_type()
-                .fn_type(&[self.ptr_sized_int_type().as_basic_type_enum()], false),
-            None,
-        );
-        self.module.add_function(
-            "py_list_decref",
-            self.ctx
-                .void_type()
-                .fn_type(&[self.ref_type().as_basic_type_enum()], false),
-            None,
-        );
-        self.module.add_function(
-            "py_list_set",
-            self.ctx.void_type().fn_type(
-                &[
-                    self.ref_type().as_basic_type_enum(),
-                    self.ptr_sized_int_type().as_basic_type_enum(),
-                    self.ref_type().as_basic_type_enum(),
-                ],
-                false,
-            ),
-            None,
-        );
-        self.module
-            .add_function("py_dict_new", self.ref_type().fn_type(&[], false), None);
         self.module.add_function(
             "py_int_from_bytes",
             self.ref_type().fn_type(
@@ -169,17 +133,6 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             None,
         );
         self.module.add_function(
-            "py_complex_from_f64",
-            self.ref_type().fn_type(
-                &[
-                    self.ctx.f64_type().as_basic_type_enum(),
-                    self.ctx.f64_type().as_basic_type_enum(),
-                ],
-                false,
-            ),
-            None,
-        );
-        self.module.add_function(
             "py_string_from_bytes",
             self.ref_type().fn_type(
                 &[self
@@ -187,6 +140,19 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
                     .i8_type()
                     .ptr_type(AddressSpace::Generic)
                     .as_basic_type_enum()],
+                false,
+            ),
+            None,
+        );
+        self.module.add_function(
+            "py_list_from_slice",
+            self.ref_type().fn_type(
+                &[
+                    self.ref_type()
+                        .ptr_type(AddressSpace::Generic)
+                        .as_basic_type_enum(),
+                    self.ptr_sized_int_type().as_basic_type_enum(),
+                ],
                 false,
             ),
             None,
@@ -264,8 +230,6 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
     pub fn build_load_none(&self) -> Rc<Object<'ctx>> {
         let ptr = self.module.get_global("py_none").unwrap();
         let obj = self.builder.build_load(ptr.as_pointer_value(), "");
-        self.builder
-            .build_call(self.module.get_function("py_incref").unwrap(), &[obj], "");
         Rc::new(Object::Instance {
             ptr: obj.into_pointer_value(),
             typ: None,
@@ -292,31 +256,32 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
     }
 
     pub fn build_list(&self, contents: &[Rc<Object<'ctx>>]) -> Rc<Object<'ctx>> {
-        let list = self.build_builtin_call(
-            "py_list_new",
-            &[self
-                .ptr_sized_int_type()
-                .const_int(contents.len() as u64, false)
-                .as_basic_value_enum()],
-        );
-        for (idx, arg) in contents.iter().enumerate() {
-            self.builder.build_call(
-                self.module.get_function("py_incref").unwrap(),
-                &[arg.ptr().as_basic_value_enum()],
-                "",
-            );
-            self.builder.build_call(
-                self.module.get_function("py_list_set").unwrap(),
-                &[
-                    list.ptr().as_basic_value_enum(),
-                    self.ptr_sized_int_type()
-                        .const_int(idx as u64, false)
-                        .as_basic_value_enum(),
-                    arg.ptr().as_basic_value_enum(),
-                ],
-                "",
-            );
+        let array = self
+            .builder
+            .build_alloca(self.ref_type().array_type(contents.len() as u32), "");
+        for (idx, item) in contents.iter().enumerate() {
+            let indices = [
+                self.ptr_sized_int_type().const_zero(),
+                self.ptr_sized_int_type().const_int(idx as u64, false),
+            ];
+            let slot = unsafe { self.builder.build_gep(array, &indices, "") };
+            self.builder.build_store(slot, item.ptr());
         }
-        list
+        let ptr = self.builder.build_cast(
+            InstructionOpcode::BitCast,
+            array,
+            self.ref_type().ptr_type(AddressSpace::Generic),
+            "",
+        );
+
+        self.build_builtin_call(
+            "py_list_from_slice",
+            &[
+                ptr.as_basic_value_enum(),
+                self.ptr_sized_int_type()
+                    .const_int(contents.len() as u64, false)
+                    .as_basic_value_enum(),
+            ],
+        )
     }
 }

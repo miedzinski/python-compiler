@@ -149,7 +149,7 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                     left.ptr().as_basic_value_enum(),
                     right.ptr().as_basic_value_enum(),
                 ];
-                Ok(self.gen.build_builtin_call("py_object_add", &args))
+                Ok(self.gen.build_builtin_call("py_add", &args))
             }
             _ => unimplemented!(),
         }
@@ -281,10 +281,9 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                             }
                         }).collect::<Result<Vec<_>>>()?;
 
-                        let vararg_obj = signature.vararg.is_some().then(|| {
+                        signature.vararg.is_some().then(|| {
                             let list = self.gen.build_list(&vararg).ptr().as_basic_value_enum();
                             call_args.push(list);
-                            list
                         });
                         if signature.kwarg.is_some() {
                             // TODO: kwarg
@@ -301,13 +300,6 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                                 typ: None,
                             })
                             .unwrap();
-                        if let Some(vararg_obj) = vararg_obj {
-                            self.gen.builder.build_call(
-                                self.gen.module.get_function("py_list_decref").unwrap(),
-                                &[vararg_obj],
-                                "",
-                            );
-                        }
                         Ok(Rc::new(obj))
                     }
                     Object::Class { .. } | Object::Instance { .. } => unimplemented!(),

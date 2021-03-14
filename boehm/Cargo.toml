@@ -1,0 +1,10 @@
+[package]
+name = "boehm"
+version = "0.1.0"
+authors = ["Dominik Miedziński <dominik@mdzn.pl>"]
+edition = "2018"
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.57.0"
