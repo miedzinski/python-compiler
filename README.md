@@ -5,33 +5,30 @@ Python 3 implementation using LLVM.
 # Build instructions
 
 This project is written in [Rust](https://www.rust-lang.org) and depends on
-[LLVM 11](https://llvm.org). To compile file `test.py`:
+[LLVM 11](https://llvm.org) and [Boehm GC](https://www.hboehm.info/gc/).
+To compile file `test.py`:
 
 ## macOS
 
 Install Rust using [rustup](https://rustup.rs).
-LLVM can be installed using [Homebrew](https://brew.sh):
+LLVM and Boehm GC can be installed using [Homebrew](https://brew.sh):
 
 ```shell
-brew install llvm@11
+brew install llvm@11 libgc
 ```
 
 Build compiler:
 
 ```shell
-export LLVM_SYS_110_PREFIX="$(brew --prefix)/opt/llvm@11/"
-
-cargo build --release
+LLVM_SYS_110_PREFIX="$(brew --prefix)/opt/llvm@11/" cargo build --release
 ```
 
 Build final executable:
 
 ```shell
-export PATH="$(brew --prefix)/opt/llvm@11/bin:$PATH"
-
 target/release/python --emit=bc test.py
-llc -filetype=obj test.bc
-clang test.o -o test -L target/release/ -lpython_core
+$(brew --prefix)/opt/llvm@11/bin/llc -filetype=obj test.bc
+clang test.o -o test -Ltarget/release/ -lpython_core -lgc
 ```
 
 # License
