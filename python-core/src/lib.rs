@@ -1,5 +1,7 @@
 use std::ffi::CStr;
-use std::fmt::{Display, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter, Write};
+use std::mem::ManuallyDrop;
+use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
 use std::{fmt, slice};
 
@@ -9,6 +11,50 @@ use num_bigint::BigInt;
 #[global_allocator]
 static A: BoehmAllocator = BoehmAllocator;
 
+pub struct Reference {
+    inner: ManuallyDrop<Box<Object>>,
+}
+
+impl Reference {
+    unsafe fn from_raw(ptr: *mut Object) -> Reference {
+        Reference {
+            inner: ManuallyDrop::new(Box::from_raw(ptr)),
+        }
+    }
+}
+
+impl Deref for Reference {
+    type Target = Object;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.inner
+    }
+}
+
+impl DerefMut for Reference {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.inner
+    }
+}
+
+impl Debug for Reference {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Debug::fmt(&**self, f)
+    }
+}
+
+impl Display for Reference {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&**self, f)
+    }
+}
+
+impl PartialEq for Reference {
+    fn eq(&self, other: &Self) -> bool {
+        PartialEq::eq(&**self, &*other)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Object {
     None,
@@ -16,7 +62,7 @@ pub enum Object {
     Float(f64),
     Bool(bool),
     String(String),
-    List(#[allow(clippy::vec_box)] Vec<Box<Object>>),
+    List(Vec<Reference>),
 }
 
 impl Object {
@@ -56,8 +102,7 @@ impl Object {
         }
     }
 
-    #[allow(clippy::vec_box)]
-    fn to_list(&self) -> &Vec<Box<Object>> {
+    fn to_list(&self) -> &Vec<Reference> {
         if let Object::List(list) = self {
             list
         } else {
@@ -125,9 +170,9 @@ pub unsafe extern "C" fn py_list_from_slice(
     len: usize,
 ) -> *const Object {
     let pointers: &[*mut Object] = slice::from_raw_parts(objects, len);
-    let mut list: Vec<Box<Object>> = Vec::with_capacity(len);
+    let mut list: Vec<Reference> = Vec::with_capacity(len);
     for ptr in pointers {
-        list.push(Box::from_raw(*ptr));
+        list.push(Reference::from_raw(*ptr));
     }
     Object::List(list).into_heap()
 }
