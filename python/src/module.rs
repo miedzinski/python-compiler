@@ -58,7 +58,6 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
     }
 
     fn visit_function_def(&mut self, node: &ast::FunctionDef) -> Self::T {
-        visitor::walk_function_def(self, node);
         let signature = Signature {
             args: node
                 .args
