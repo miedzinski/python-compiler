@@ -338,6 +338,15 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                     ],
                 ))
             }
+            ast::NumKind::Float(float) => Ok(self.gen.build_builtin_call(
+                "py_float_from_f64",
+                &[self
+                    .gen
+                    .ctx
+                    .f64_type()
+                    .const_float(*float)
+                    .as_basic_value_enum()],
+            )),
             _ => unimplemented!(),
         }
     }
