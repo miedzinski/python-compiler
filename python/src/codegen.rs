@@ -20,7 +20,7 @@ use python_syntax::visitor::Visitor;
 
 use crate::error::LlvmError;
 use crate::module::ModuleVisitor;
-use crate::object::{Object, Signature, SymbolTable};
+use crate::object::{Constant, Object, Parameter, Signature, SymbolTable};
 
 fn read_file<P: AsRef<Path>>(path: P) -> Result<String> {
     let mut file = File::open(path.as_ref())?;
@@ -99,6 +99,8 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
 
     fn add_runtime_decls(&mut self) {
         self.module.add_global(self.ref_type(), None, "py_none");
+        self.module.add_global(self.ref_type(), None, "py_true");
+        self.module.add_global(self.ref_type(), None, "py_false");
         self.module
             .add_function("py_init", self.ctx.void_type().fn_type(&[], false), None);
         self.module.add_function(
@@ -110,6 +112,12 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
                 ],
                 false,
             ),
+            None,
+        );
+        self.module.add_function(
+            "py_bool",
+            self.ref_type()
+                .fn_type(&[self.ref_type().as_basic_type_enum()], false),
             None,
         );
         self.module.add_function(
@@ -185,6 +193,24 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
                 symtable: RefCell::default(),
             }),
         );
+        symtable.insert(
+            "bool".to_string(),
+            Rc::new(Object::Function {
+                ptr: self
+                    .module
+                    .get_function("py_bool")
+                    .unwrap()
+                    .as_global_value()
+                    .as_pointer_value(),
+                signature: Signature {
+                    args: vec![Parameter::required("x".to_string())],
+                    vararg: None,
+                    kwonlyargs: vec![],
+                    kwarg: None,
+                },
+                symtable: RefCell::default(),
+            }),
+        );
         let module = Rc::new(Object::Module {
             symtable: RefCell::new(symtable),
         });
@@ -227,8 +253,13 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
         self.stack.last().unwrap()
     }
 
-    pub fn build_load_none(&self) -> Rc<Object<'ctx>> {
-        let ptr = self.module.get_global("py_none").unwrap();
+    pub fn build_load_constant(&self, constant: Constant) -> Rc<Object<'ctx>> {
+        let name = match constant {
+            Constant::None => "py_none",
+            Constant::True => "py_true",
+            Constant::False => "py_false",
+        };
+        let ptr = self.module.get_global(name).unwrap();
         let obj = self.builder.build_load(ptr.as_pointer_value(), "");
         Rc::new(Object::Instance {
             ptr: obj.into_pointer_value(),

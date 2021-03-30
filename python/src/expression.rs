@@ -9,7 +9,7 @@ use python_syntax::ast;
 use python_syntax::visitor::{Accept, Visitor};
 
 use crate::codegen::Codegen;
-use crate::object::Object;
+use crate::object::{Constant, Object};
 
 pub struct ExpressionVisitor<'c, 'l, 'ctx> {
     gen: &'c Codegen<'l, 'ctx>,
@@ -383,8 +383,13 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
         unimplemented!()
     }
 
-    fn visit_name_constant(&mut self, _node: &ast::NameConstant) -> Self::T {
-        unimplemented!()
+    fn visit_name_constant(&mut self, node: &ast::NameConstant) -> Self::T {
+        let constant = match node.value {
+            ast::Singleton::None => Constant::None,
+            ast::Singleton::True => Constant::True,
+            ast::Singleton::False => Constant::False,
+        };
+        Ok(self.gen.build_load_constant(constant))
     }
 
     fn visit_ellipsis(&mut self, _node: &ast::Ellipsis) -> Self::T {

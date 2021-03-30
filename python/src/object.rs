@@ -85,3 +85,9 @@ impl<'ctx> Parameter<'ctx> {
         }
     }
 }
+
+pub enum Constant {
+    None,
+    True,
+    False,
+}

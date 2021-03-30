@@ -8,7 +8,7 @@ use python_syntax::visitor::{self, Accept, Visitor};
 
 use crate::codegen::{Codegen, Scope};
 use crate::expression::ExpressionVisitor;
-use crate::object::{Object, Parameter, Signature, SymbolTable};
+use crate::object::{Constant, Object, Parameter, Signature, SymbolTable};
 
 pub struct ModuleVisitor<'c, 'l, 'ctx> {
     gen: &'c mut Codegen<'l, 'ctx>,
@@ -147,7 +147,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         self.gen.stack.pop().unwrap();
         self.gen
             .builder
-            .build_return(Some(&self.gen.build_load_none().ptr()));
+            .build_return(Some(&self.gen.build_load_constant(Constant::None).ptr()));
         self.gen.builder.position_at_end(self.gen.scope().block);
         Ok(())
     }

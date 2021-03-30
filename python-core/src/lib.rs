@@ -3,10 +3,10 @@ use std::fmt::{Debug, Display, Formatter, Write};
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
-use std::{fmt, slice};
+use std::{fmt, ptr, slice};
 
 use boehm::BoehmAllocator;
-use num_bigint::BigInt;
+use num_bigint::{BigInt, ToBigInt};
 
 #[global_allocator]
 static A: BoehmAllocator = BoehmAllocator;
@@ -121,7 +121,10 @@ impl Display for Object {
             Object::None => f.write_str("None"),
             Object::Integer(int) => write!(f, "{}", int),
             Object::Float(float) => write!(f, "{}", float),
-            Object::Bool(bool) => write!(f, "{}", bool),
+            Object::Bool(bool) => match bool {
+                true => f.write_str("True"),
+                false => f.write_str("False"),
+            },
             Object::String(str) => write!(f, "{}", str),
             Object::List(list) => {
                 f.write_char('[')?;
@@ -139,12 +142,18 @@ impl Display for Object {
 }
 
 #[export_name = "py_none"]
-pub static mut NONE: *const Object = 0 as *const Object;
+pub static mut NONE: *const Object = ptr::null();
+#[export_name = "py_true"]
+pub static mut TRUE: *const Object = ptr::null();
+#[export_name = "py_false"]
+pub static mut FALSE: *const Object = ptr::null();
 
 #[no_mangle]
 pub unsafe extern "C" fn py_init() {
     BoehmAllocator::init();
     NONE = Object::None.into_heap();
+    TRUE = Object::Bool(true).into_heap();
+    FALSE = Object::Bool(false).into_heap();
 }
 
 #[no_mangle]
@@ -175,6 +184,22 @@ pub unsafe extern "C" fn py_list_from_slice(
         list.push(Reference::from_raw(*ptr));
     }
     Object::List(list).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_bool(val: *const Object) -> *const Object {
+    match &*val {
+        Object::None => FALSE,
+        Object::Integer(int) if *int == 0.to_bigint().unwrap() => FALSE,
+        Object::Integer(_) => TRUE,
+        Object::Float(float) if *float == 0f64 => FALSE,
+        Object::Float(_) => TRUE,
+        bool @ Object::Bool(_) => bool,
+        Object::String(str) if str.is_empty() => FALSE,
+        Object::String(_) => TRUE,
+        Object::List(list) if list.is_empty() => FALSE,
+        Object::List(_) => TRUE,
+    }
 }
 
 #[no_mangle]
