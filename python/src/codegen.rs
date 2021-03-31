@@ -7,7 +7,6 @@ use std::rc::Rc;
 
 use anyhow::{Context as _, Result};
 use fnv::FnvHashMap;
-use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -31,14 +30,13 @@ fn read_file<P: AsRef<Path>>(path: P) -> Result<String> {
 }
 
 pub struct Scope<'ctx> {
-    pub block: BasicBlock<'ctx>,
     // Module, class or function
     pub object: Rc<Object<'ctx>>,
 }
 
 impl<'ctx> Scope<'ctx> {
-    pub fn new(block: BasicBlock<'ctx>, object: Rc<Object<'ctx>>) -> Scope<'ctx> {
-        Scope { block, object }
+    pub fn new(object: Rc<Object<'ctx>>) -> Scope<'ctx> {
+        Scope { object }
     }
 
     pub fn symtable(&self) -> &RefCell<SymbolTable<'ctx>> {

@@ -3,6 +3,8 @@ use std::rc::Rc;
 
 use anyhow::Result;
 use inkwell::types::BasicType;
+use inkwell::values::BasicValue;
+use inkwell::IntPredicate;
 use python_syntax::ast;
 use python_syntax::visitor::{self, Accept, Visitor};
 
@@ -31,7 +33,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         let module = Rc::new(Object::Module {
             symtable: RefCell::default(),
         });
-        let scope = Scope::new(block, module.clone());
+        let scope = Scope::new(module.clone());
         {
             self.gen
                 .modules
@@ -139,7 +141,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
                 .borrow_mut()
                 .insert(node.name.to_string(), fun.clone());
         }
-        let scope = Scope::new(block, fun);
+        let scope = Scope::new(fun);
         self.gen.stack.push(scope);
         for e in &node.body {
             e.accept(self)?;
@@ -148,7 +150,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         self.gen
             .builder
             .build_return(Some(&self.gen.build_load_constant(Constant::None).ptr()));
-        self.gen.builder.position_at_end(self.gen.scope().block);
+        self.gen.builder.position_at_end(block);
         Ok(())
     }
 
@@ -215,7 +217,50 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
     }
 
     fn visit_if(&mut self, node: &ast::If) -> Self::T {
-        visitor::walk_if(self, node);
+        let mut expr_visitor = ExpressionVisitor::new(self.gen);
+        let function = self
+            .gen
+            .builder
+            .get_insert_block()
+            .and_then(|x| x.get_parent())
+            .unwrap();
+        let body_block = self.gen.ctx.append_basic_block(function, "");
+        let else_block = self.gen.ctx.append_basic_block(function, "");
+        let merge_block = self.gen.ctx.append_basic_block(function, "");
+
+        let test = node.test.accept(&mut expr_visitor)?;
+        let evaluated_test = self
+            .gen
+            .build_builtin_call("py_bool", &[test.ptr().as_basic_value_enum()]);
+        let ptr_diff = self.gen.builder.build_ptr_diff(
+            evaluated_test.ptr(),
+            self.gen.build_load_constant(Constant::True).ptr(),
+            "",
+        );
+        let is_true = self.gen.builder.build_int_compare(
+            IntPredicate::EQ,
+            ptr_diff,
+            self.gen.ptr_sized_int_type().const_zero(),
+            "",
+        );
+        self.gen
+            .builder
+            .build_conditional_branch(is_true, body_block, else_block);
+
+        self.gen.builder.position_at_end(body_block);
+        for e in &node.body {
+            e.accept(self)?;
+        }
+        self.gen.builder.build_unconditional_branch(merge_block);
+
+        self.gen.builder.position_at_end(else_block);
+        for e in &node.orelse {
+            e.accept(self)?;
+        }
+        self.gen.builder.build_unconditional_branch(merge_block);
+
+        self.gen.builder.position_at_end(merge_block);
+
         Ok(())
     }
 
