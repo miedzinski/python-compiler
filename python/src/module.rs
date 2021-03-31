@@ -225,8 +225,11 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
             .and_then(|x| x.get_parent())
             .unwrap();
         let body_block = self.gen.ctx.append_basic_block(function, "");
-        let else_block = self.gen.ctx.append_basic_block(function, "");
         let merge_block = self.gen.ctx.append_basic_block(function, "");
+        let else_block = match node.orelse.is_empty() {
+            true => merge_block,
+            false => self.gen.ctx.insert_basic_block_after(body_block, ""),
+        };
 
         let test = node.test.accept(&mut expr_visitor)?;
         let evaluated_test = self
@@ -253,11 +256,13 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         }
         self.gen.builder.build_unconditional_branch(merge_block);
 
-        self.gen.builder.position_at_end(else_block);
-        for e in &node.orelse {
-            e.accept(self)?;
+        if !node.orelse.is_empty() {
+            self.gen.builder.position_at_end(else_block);
+            for e in &node.orelse {
+                e.accept(self)?;
+            }
+            self.gen.builder.build_unconditional_branch(merge_block);
         }
-        self.gen.builder.build_unconditional_branch(merge_block);
 
         self.gen.builder.position_at_end(merge_block);
 
