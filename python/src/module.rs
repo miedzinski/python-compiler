@@ -96,6 +96,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
             self.gen.ref_type().fn_type(&llvm_args, false),
             None,
         );
+        let prev_block = self.gen.builder.get_insert_block().unwrap();
         let block = self.gen.ctx.append_basic_block(llvm_fun, "entry");
         self.gen.builder.position_at_end(block);
         let mut symtable = SymbolTable::default();
@@ -150,7 +151,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         self.gen
             .builder
             .build_return(Some(&self.gen.build_load_constant(Constant::None).ptr()));
-        self.gen.builder.position_at_end(block);
+        self.gen.builder.position_at_end(prev_block);
         Ok(())
     }
 
