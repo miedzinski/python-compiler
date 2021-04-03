@@ -15,13 +15,30 @@ use crate::object::{Binding, Constant, Object, Parameter, Scope, Signature, Symb
 pub struct ModuleVisitor<'c, 'l, 'ctx> {
     gen: &'c mut Codegen<'l, 'ctx>,
     name: &'c str,
+    seen_return: bool,
 }
 
 impl<'c, 'l, 'ctx> ModuleVisitor<'c, 'l, 'ctx> {
     pub fn new(gen: &'c mut Codegen<'l, 'ctx>, name: &'c str) -> ModuleVisitor<'c, 'l, 'ctx> {
-        ModuleVisitor { gen, name }
+        ModuleVisitor {
+            gen,
+            name,
+            seen_return: false,
+        }
+    }
+
+    fn visit_statements(&mut self, statements: &[ast::Statement]) -> Result<()> {
+        self.seen_return = false;
+        for e in statements {
+            e.accept(self)?;
+            if self.seen_return {
+                break;
+            };
+        }
+        Ok(())
     }
 }
+
 impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
     type T = Result<()>;
 
@@ -151,13 +168,13 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         }
         let scope = Rc::new(RefCell::new(Scope::Function { symtable }));
         self.gen.stack.push(scope);
-        for e in &node.body {
-            e.accept(self)?;
-        }
+        self.visit_statements(&node.body)?;
         self.gen.stack.pop().unwrap();
-        self.gen
-            .builder
-            .build_return(Some(&self.gen.build_load_constant(Constant::None).ptr()));
+        if !self.seen_return {
+            self.gen
+                .builder
+                .build_return(Some(&self.gen.build_load_constant(Constant::None).ptr()));
+        }
         self.gen.builder.position_at_end(prev_block);
         Ok(())
     }
@@ -173,7 +190,13 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
     }
 
     fn visit_return(&mut self, node: &ast::Return) -> Self::T {
-        visitor::walk_return(self, node);
+        let mut expr_visitor = ExpressionVisitor::new(self.gen);
+        let obj = match &node.value {
+            Some(value) => value.accept(&mut expr_visitor)?,
+            _ => self.gen.build_load_constant(Constant::None),
+        };
+        self.gen.builder.build_return(Some(&obj.ptr()));
+        self.seen_return = true;
         Ok(())
     }
 
@@ -278,20 +301,21 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
             .build_conditional_branch(is_true, body_block, else_block);
 
         self.gen.builder.position_at_end(body_block);
-        for e in &node.body {
-            e.accept(self)?;
-        }
-        self.gen.builder.build_unconditional_branch(merge_block);
-
-        if !node.orelse.is_empty() {
-            self.gen.builder.position_at_end(else_block);
-            for e in &node.orelse {
-                e.accept(self)?;
-            }
+        self.visit_statements(&node.body)?;
+        if !self.seen_return {
             self.gen.builder.build_unconditional_branch(merge_block);
         }
 
+        if !node.orelse.is_empty() {
+            self.gen.builder.position_at_end(else_block);
+            self.visit_statements(&node.orelse)?;
+            if !self.seen_return {
+                self.gen.builder.build_unconditional_branch(merge_block);
+            }
+        }
+
         self.gen.builder.position_at_end(merge_block);
+        self.seen_return = false;
 
         Ok(())
     }
