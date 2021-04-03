@@ -8,9 +8,9 @@ use inkwell::IntPredicate;
 use python_syntax::ast;
 use python_syntax::visitor::{self, Accept, Visitor};
 
-use crate::codegen::{Codegen, Scope};
+use crate::codegen::Codegen;
 use crate::expression::ExpressionVisitor;
-use crate::object::{Constant, Object, Parameter, Signature, SymbolTable};
+use crate::object::{Binding, Constant, Object, Parameter, Scope, Signature, SymbolTable, Type};
 
 pub struct ModuleVisitor<'c, 'l, 'ctx> {
     gen: &'c mut Codegen<'l, 'ctx>,
@@ -30,15 +30,13 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         let fun = self.gen.module.add_function(self.name, fun_type, None);
         let block = self.gen.ctx.append_basic_block(fun, "entry");
         self.gen.builder.position_at_end(block);
-        let module = Rc::new(Object::Module {
-            symtable: RefCell::default(),
-        });
-        let scope = Scope::new(module.clone());
+        let scope = Rc::new(RefCell::new(Scope::Module {
+            symtable: SymbolTable::default(),
+        }));
         {
             self.gen
                 .modules
-                .borrow_mut()
-                .insert(self.name.to_string(), module);
+                .insert(self.name.to_string(), scope.clone());
         }
         self.gen.stack.push(scope);
         for e in &node.body {
@@ -105,44 +103,53 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
             .enumerate()
             .take(signature.slots())
         {
-            let obj = Object::Instance {
-                ptr: param.into_pointer_value(),
-                typ: None,
+            let ptr = self.gen.builder.build_alloca(self.gen.ref_type(), "");
+            self.gen.builder.build_store(ptr, param);
+            let binding = Binding {
+                ptr,
+                typ: Type::Instance,
             };
             let name = signature.nth_slot(idx).map(|x| x.name.clone()).unwrap();
-            symtable.insert(name, Rc::new(obj));
+            symtable.insert(name, binding);
         }
         if let Some(name) = &signature.vararg {
             let param = llvm_fun.get_nth_param(signature.slots() as u32).unwrap();
-            let obj = Object::Instance {
-                ptr: param.into_pointer_value(),
-                typ: None,
+            let ptr = self.gen.builder.build_alloca(self.gen.ref_type(), "");
+            self.gen.builder.build_store(ptr, param);
+            let binding = Binding {
+                ptr,
+                typ: Type::Instance,
             };
-            symtable.insert(name.clone(), Rc::new(obj));
+            symtable.insert(name.clone(), binding);
         }
         if let Some(name) = &signature.kwarg {
             let param = llvm_fun
                 .get_nth_param(signature.slots() as u32 + 1)
                 .unwrap();
-            let obj = Object::Instance {
-                ptr: param.into_pointer_value(),
-                typ: None,
+            let ptr = self.gen.builder.build_alloca(self.gen.ref_type(), "");
+            self.gen.builder.build_store(ptr, param);
+            let binding = Binding {
+                ptr,
+                typ: Type::Instance,
             };
-            symtable.insert(name.clone(), Rc::new(obj));
+            symtable.insert(name.clone(), binding);
         }
         let fun = Rc::new(Object::Function {
             ptr: llvm_fun.as_global_value().as_pointer_value(),
-            signature,
-            symtable: RefCell::new(symtable),
+            signature: signature.clone(),
         });
+        let binding = Binding {
+            ptr: fun.ptr(),
+            typ: Type::Function { signature },
+        };
         {
             self.gen
                 .scope()
-                .symtable()
                 .borrow_mut()
-                .insert(node.name.to_string(), fun.clone());
+                .symtable_mut()
+                .insert(node.name.to_string(), binding);
         }
-        let scope = Scope::new(fun);
+        let scope = Rc::new(RefCell::new(Scope::Function { symtable }));
         self.gen.stack.push(scope);
         for e in &node.body {
             e.accept(self)?;
@@ -181,10 +188,18 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
         for e in &node.targets {
             match e {
                 ast::Expression::Name(ast::Name { id, .. }) => {
-                    let ptr = self.gen.builder.build_alloca(self.gen.ref_type(), "");
-                    let mut symtable = self.gen.scope().symtable().borrow_mut();
-                    self.gen.builder.build_store(ptr, value.ptr());
-                    symtable.insert(id.clone(), value.clone());
+                    let scope = self.gen.scope();
+                    let mut scope = scope.borrow_mut();
+                    let binding =
+                        scope
+                            .symtable_mut()
+                            .entry(id.clone())
+                            .or_insert_with(|| Binding {
+                                ptr: self.gen.builder.build_alloca(self.gen.ref_type(), ""),
+                                typ: Type::Instance,
+                            });
+                    binding.typ = value.typ();
+                    self.gen.builder.build_store(binding.ptr, value.ptr());
                 }
                 _ => unimplemented!(),
             }

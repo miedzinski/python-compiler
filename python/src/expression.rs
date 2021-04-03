@@ -9,7 +9,7 @@ use python_syntax::ast;
 use python_syntax::visitor::{Accept, Visitor};
 
 use crate::codegen::Codegen;
-use crate::object::{Constant, Object};
+use crate::object::{Constant, Object, Scope, Type};
 
 pub struct ExpressionVisitor<'c, 'l, 'ctx> {
     gen: &'c Codegen<'l, 'ctx>,
@@ -297,13 +297,11 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                             .left()
                             .map(|x| Object::Instance {
                                 ptr: x.into_pointer_value(),
-                                typ: None,
                             })
                             .unwrap();
                         Ok(Rc::new(obj))
                     }
-                    Object::Class { .. } | Object::Instance { .. } => unimplemented!(),
-                    Object::Module { .. } => bail!("module object is not callable"),
+                    Object::Instance { .. } => unimplemented!(),
                 }
             }
             _ => unimplemented!(),
@@ -409,19 +407,20 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
     }
 
     fn visit_name(&mut self, node: &ast::Name) -> Self::T {
-        self.gen
+        let binding = self
+            .gen
             .stack
             .iter()
             .rev()
             .filter_map(|x| {
-                let symtable = x.symtable();
-                symtable.borrow().get(&node.id).cloned()
+                let scope = x.borrow();
+                scope.symtable().get(&node.id).cloned()
             })
             .next()
             .or_else(|| {
-                let builtins = self.gen.modules.borrow().get("builtins").cloned().unwrap();
+                let builtins = self.gen.modules.get("builtins").unwrap().borrow();
                 match &*builtins {
-                    Object::Module { symtable } => symtable.borrow().get(&node.id).cloned(),
+                    Scope::Module { symtable } => symtable.get(&node.id).cloned(),
                     _ => panic!("builtins is not a module"),
                 }
             })
@@ -430,7 +429,21 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                     "name '{}' is not defined (line {} column {})",
                     node.id, node.span.start.line, node.span.start.column
                 )
-            })
+            })?;
+        let obj = match binding.typ {
+            Type::Function { signature } => Object::Function {
+                ptr: binding.ptr,
+                signature: signature.clone(),
+            },
+            Type::Instance => Object::Instance {
+                ptr: self
+                    .gen
+                    .builder
+                    .build_load(binding.ptr, "")
+                    .into_pointer_value(),
+            },
+        };
+        Ok(Rc::new(obj))
     }
 
     fn visit_list(&mut self, _node: &ast::List) -> Self::T {

@@ -1,43 +1,69 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use fnv::FnvHashMap;
 use inkwell::values::PointerValue;
-use python_syntax::ast;
 
-pub type SymbolTable<'ctx> = FnvHashMap<String, Rc<Object<'ctx>>>;
+pub type SymbolTable<'ctx> = FnvHashMap<String, Binding<'ctx>>;
+
+pub enum Scope<'ctx> {
+    Module { symtable: SymbolTable<'ctx> },
+    Function { symtable: SymbolTable<'ctx> },
+}
+
+impl<'ctx> Scope<'ctx> {
+    pub fn symtable(&self) -> &SymbolTable<'ctx> {
+        match &*self {
+            Scope::Module { symtable, .. } | Scope::Function { symtable, .. } => symtable,
+        }
+    }
+
+    pub fn symtable_mut(&mut self) -> &mut SymbolTable<'ctx> {
+        match &mut *self {
+            Scope::Module { symtable, .. } | Scope::Function { symtable, .. } => symtable,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Binding<'ctx> {
+    pub ptr: PointerValue<'ctx>,
+    pub typ: Type<'ctx>,
+}
+
+#[derive(Clone)]
+pub enum Type<'ctx> {
+    Function { signature: Signature<'ctx> },
+    Instance,
+}
 
 pub enum Object<'ctx> {
-    Module {
-        symtable: RefCell<SymbolTable<'ctx>>,
-    },
-    Class {
-        ptr: PointerValue<'ctx>,
-        def: ast::ClassDef,
-        symtable: RefCell<SymbolTable<'ctx>>,
-    },
     Function {
         ptr: PointerValue<'ctx>,
         signature: Signature<'ctx>,
-        symtable: RefCell<SymbolTable<'ctx>>,
     },
     Instance {
         ptr: PointerValue<'ctx>,
-        typ: Option<Rc<Object<'ctx>>>,
     },
 }
 
 impl<'ctx> Object<'ctx> {
     pub fn ptr(&self) -> PointerValue<'ctx> {
         match *self {
-            Object::Class { ptr, .. }
-            | Object::Function { ptr, .. }
-            | Object::Instance { ptr, .. } => ptr,
-            Object::Module { .. } => panic!("attempted to access module's pointer"),
+            Object::Function { ptr, .. } | Object::Instance { ptr, .. } => ptr,
+        }
+    }
+
+    pub fn typ(&self) -> Type<'ctx> {
+        match self {
+            Object::Function { signature, .. } => Type::Function {
+                signature: signature.clone(),
+            },
+            Object::Instance { .. } => Type::Instance,
         }
     }
 }
 
+#[derive(Clone)]
 pub struct Signature<'ctx> {
     pub args: Vec<Parameter<'ctx>>,
     pub vararg: Option<String>,
@@ -68,6 +94,7 @@ impl<'ctx> Signature<'ctx> {
     }
 }
 
+#[derive(Clone)]
 pub struct Parameter<'ctx> {
     pub name: String,
     pub default: Option<Rc<Object<'ctx>>>,

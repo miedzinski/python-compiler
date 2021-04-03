@@ -19,7 +19,7 @@ use python_syntax::visitor::Visitor;
 
 use crate::error::LlvmError;
 use crate::module::ModuleVisitor;
-use crate::object::{Constant, Object, Parameter, Signature, SymbolTable};
+use crate::object::{Binding, Constant, Object, Parameter, Scope, Signature, Type};
 
 fn read_file<P: AsRef<Path>>(path: P) -> Result<String> {
     let mut file = File::open(path.as_ref())?;
@@ -29,33 +29,13 @@ fn read_file<P: AsRef<Path>>(path: P) -> Result<String> {
     Ok(ret)
 }
 
-pub struct Scope<'ctx> {
-    // Module, class or function
-    pub object: Rc<Object<'ctx>>,
-}
-
-impl<'ctx> Scope<'ctx> {
-    pub fn new(object: Rc<Object<'ctx>>) -> Scope<'ctx> {
-        Scope { object }
-    }
-
-    pub fn symtable(&self) -> &RefCell<SymbolTable<'ctx>> {
-        match &*self.object {
-            Object::Module { symtable, .. }
-            | Object::Function { symtable, .. }
-            | Object::Class { symtable, .. } => symtable,
-            _ => panic!("object associated with this scope is not a module, class, or function"),
-        }
-    }
-}
-
 pub struct Codegen<'l, 'ctx> {
     pub ctx: &'ctx Context,
     pub builder: &'l Builder<'ctx>,
     pub module: &'l Module<'ctx>,
     pub target: &'l TargetData,
-    pub modules: RefCell<SymbolTable<'ctx>>,
-    pub stack: Vec<Scope<'ctx>>,
+    pub modules: FnvHashMap<String, Rc<RefCell<Scope<'ctx>>>>,
+    pub stack: Vec<Rc<RefCell<Scope<'ctx>>>>,
 }
 
 impl<'l, 'ctx> Codegen<'l, 'ctx> {
@@ -70,7 +50,7 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             builder,
             module,
             target,
-            modules: RefCell::default(),
+            modules: FnvHashMap::default(),
             stack: vec![],
         }
     }
@@ -171,50 +151,48 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
         );
     }
 
-    fn setup_builtins(&self) {
+    fn setup_builtins(&mut self) {
         let mut symtable = FnvHashMap::default();
         symtable.insert(
             "print".to_string(),
-            Rc::new(Object::Function {
+            Binding {
                 ptr: self
                     .module
                     .get_function("py_print")
                     .unwrap()
                     .as_global_value()
                     .as_pointer_value(),
-                signature: Signature {
-                    args: vec![],
-                    vararg: Some("objects".to_string()),
-                    kwonlyargs: vec![],
-                    kwarg: None,
+                typ: Type::Function {
+                    signature: Signature {
+                        args: vec![],
+                        vararg: Some("objects".to_string()),
+                        kwonlyargs: vec![],
+                        kwarg: None,
+                    },
                 },
-                symtable: RefCell::default(),
-            }),
+            },
         );
         symtable.insert(
             "bool".to_string(),
-            Rc::new(Object::Function {
+            Binding {
                 ptr: self
                     .module
                     .get_function("py_bool")
                     .unwrap()
                     .as_global_value()
                     .as_pointer_value(),
-                signature: Signature {
-                    args: vec![Parameter::required("x".to_string())],
-                    vararg: None,
-                    kwonlyargs: vec![],
-                    kwarg: None,
+                typ: Type::Function {
+                    signature: Signature {
+                        args: vec![Parameter::required("x".to_string())],
+                        vararg: None,
+                        kwonlyargs: vec![],
+                        kwarg: None,
+                    },
                 },
-                symtable: RefCell::default(),
-            }),
+            },
         );
-        let module = Rc::new(Object::Module {
-            symtable: RefCell::new(symtable),
-        });
-        self.modules
-            .borrow_mut()
-            .insert("builtins".to_string(), module);
+        let module = Rc::new(RefCell::new(Scope::Module { symtable }));
+        self.modules.insert("builtins".to_string(), module);
     }
 
     fn add_entry(&mut self) {
@@ -247,8 +225,8 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
         self.ctx.i8_type().ptr_type(AddressSpace::Generic)
     }
 
-    pub fn scope(&self) -> &Scope<'ctx> {
-        self.stack.last().unwrap()
+    pub fn scope(&self) -> Rc<RefCell<Scope<'ctx>>> {
+        self.stack.last().cloned().unwrap()
     }
 
     pub fn build_load_constant(&self, constant: Constant) -> Rc<Object<'ctx>> {
@@ -261,7 +239,6 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
         let obj = self.builder.build_load(ptr.as_pointer_value(), "");
         Rc::new(Object::Instance {
             ptr: obj.into_pointer_value(),
-            typ: None,
         })
     }
 
@@ -278,7 +255,6 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             .left()
             .map(|x| Object::Instance {
                 ptr: x.into_pointer_value(),
-                typ: None,
             })
             .unwrap();
         Rc::new(obj)
