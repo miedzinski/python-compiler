@@ -190,14 +190,25 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
                 ast::Expression::Name(ast::Name { id, .. }) => {
                     let scope = self.gen.scope();
                     let mut scope = scope.borrow_mut();
-                    let binding =
-                        scope
-                            .symtable_mut()
-                            .entry(id.clone())
-                            .or_insert_with(|| Binding {
-                                ptr: self.gen.builder.build_alloca(self.gen.ref_type(), ""),
-                                typ: Type::Instance,
-                            });
+                    let is_module_scope = matches!(&*scope, Scope::Module { .. });
+                    let binding = scope.symtable_mut().entry(id.clone()).or_insert_with(|| {
+                        let ptr = match is_module_scope {
+                            true => {
+                                let global = self.gen.module.add_global(
+                                    self.gen.ref_type(),
+                                    None,
+                                    &format!("{}${}", self.name, id),
+                                );
+                                global.set_initializer(&self.gen.ref_type().const_null());
+                                global.as_pointer_value()
+                            }
+                            false => self.gen.builder.build_alloca(self.gen.ref_type(), ""),
+                        };
+                        Binding {
+                            ptr,
+                            typ: Type::Instance,
+                        }
+                    });
                     binding.typ = value.typ();
                     self.gen.builder.build_store(binding.ptr, value.ptr());
                 }
