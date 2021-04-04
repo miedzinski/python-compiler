@@ -14,6 +14,8 @@ mod error;
 mod expression;
 mod module;
 mod object;
+#[macro_use]
+mod macros;
 
 enum FileType {
     LlvmIr,

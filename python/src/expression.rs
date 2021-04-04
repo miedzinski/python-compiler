@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use fnv::FnvHashMap;
 use inkwell::values::{BasicValue, InstructionOpcode};
 use inkwell::AddressSpace;
@@ -10,6 +10,7 @@ use python_syntax::visitor::{Accept, Visitor};
 
 use crate::codegen::Codegen;
 use crate::object::{Constant, Object, Scope, Type};
+use crate::{bail_with_node, format_with_node};
 
 pub struct ExpressionVisitor<'c, 'l, 'ctx> {
     gen: &'c Codegen<'l, 'ctx>,
@@ -224,14 +225,13 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                     Object::Function { ptr, signature, .. } => {
                         let mut slots = vec![None; signature.slots()];
                         if args.len() > signature.args.len() && signature.vararg.is_none() {
-                            bail!(
-                                "{}() takes {} positional arguments but {} were given (line {} column {})",
+                            bail_with_node!(
+                                node,
+                                "{}() takes {} positional arguments but {} were given",
                                 id,
                                 signature.args.len(),
-                                args.len(),
-                                node.span.start.line,
-                                node.span.start.column,
-                                )
+                                args.len()
+                            )
                         }
 
                         let mut vararg = vec![];
@@ -246,40 +246,44 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                         let mut kwarg = FnvHashMap::default();
                         for (kwarg_name, kwarg_value) in keywords {
                             match kwarg_name {
-                                Some(kwarg_name) => {
-                                    match signature.position(kwarg_name) {
-                                        Some(idx) => slots[idx] = Some(kwarg_value),
-                                        None if signature.kwarg.is_some() => {kwarg.insert(kwarg_name, kwarg_value);},
-                                        _ => bail!(
-                                            "{}() got an unexpected keyword argument '{}' (line {} column {})",
-                                            id,
-                                            kwarg_name,
-                                            node.span.start.line,
-                                            node.span.start.column,
-                                        ),
+                                Some(kwarg_name) => match signature.position(kwarg_name) {
+                                    Some(idx) => slots[idx] = Some(kwarg_value),
+                                    None if signature.kwarg.is_some() => {
+                                        kwarg.insert(kwarg_name, kwarg_value);
                                     }
-                                }
+                                    _ => bail_with_node!(
+                                        node,
+                                        "{}() got an unexpected keyword argument '{}'",
+                                        id,
+                                        kwarg_name
+                                    ),
+                                },
                                 None => unimplemented!(), // **kwarg
                             }
                         }
 
-                        let mut call_args = slots.into_iter().enumerate().map(|(idx, slot)| {
-                            match slot {
+                        let mut call_args = slots
+                            .into_iter()
+                            .enumerate()
+                            .map(|(idx, slot)| match slot {
                                 Some(arg) => Ok(arg.ptr().as_basic_value_enum()),
                                 None => {
                                     let param = signature.nth_slot(idx).unwrap();
-                                    param.default.as_ref().map(|x| x.ptr().as_basic_value_enum()).with_context(|| {
-                                        format!(
-                                            "{}() missing required argument '{}' (line {} column {})",
-                                            id,
-                                            param.name,
-                                            node.span.start.line,
-                                            node.span.start.column,
-                                        )
-                                    })
+                                    param
+                                        .default
+                                        .as_ref()
+                                        .map(|x| x.ptr().as_basic_value_enum())
+                                        .with_context(|| {
+                                            format_with_node!(
+                                                node,
+                                                "{}() missing required argument '{}'",
+                                                id,
+                                                param.name
+                                            )
+                                        })
                                 }
-                            }
-                        }).collect::<Result<Vec<_>>>()?;
+                            })
+                            .collect::<Result<Vec<_>>>()?;
 
                         signature.vararg.is_some().then(|| {
                             let list = self.gen.build_list(&vararg).ptr().as_basic_value_enum();
@@ -424,12 +428,7 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
                     _ => panic!("builtins is not a module"),
                 }
             })
-            .with_context(|| {
-                format!(
-                    "name '{}' is not defined (line {} column {})",
-                    node.id, node.span.start.line, node.span.start.column
-                )
-            })?;
+            .with_context(|| format_with_node!(node, "name '{}' is not defined", node.id))?;
         let obj = match binding.typ {
             Type::Function { signature } => Object::Function {
                 ptr: binding.ptr,
