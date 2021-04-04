@@ -22,6 +22,14 @@ impl<'ctx> Scope<'ctx> {
             Scope::Module { symtable, .. } | Scope::Function { symtable, .. } => symtable,
         }
     }
+
+    pub fn is_module(&self) -> bool {
+        matches!(self, Scope::Module { .. })
+    }
+
+    pub fn is_function(&self) -> bool {
+        matches!(self, Scope::Function { .. })
+    }
 }
 
 #[derive(Clone)]

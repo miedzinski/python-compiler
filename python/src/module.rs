@@ -8,6 +8,7 @@ use inkwell::IntPredicate;
 use python_syntax::ast;
 use python_syntax::visitor::{self, Accept, Visitor};
 
+use crate::bail_with_node;
 use crate::codegen::Codegen;
 use crate::expression::ExpressionVisitor;
 use crate::object::{Binding, Constant, Object, Parameter, Scope, Signature, SymbolTable, Type};
@@ -190,6 +191,10 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
     }
 
     fn visit_return(&mut self, node: &ast::Return) -> Self::T {
+        if !self.gen.scope().borrow().is_function() {
+            bail_with_node!(node, "'return' outside function")
+        }
+
         let mut expr_visitor = ExpressionVisitor::new(self.gen);
         let obj = match &node.value {
             Some(value) => value.accept(&mut expr_visitor)?,
@@ -213,7 +218,7 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
                 ast::Expression::Name(ast::Name { id, .. }) => {
                     let scope = self.gen.scope();
                     let mut scope = scope.borrow_mut();
-                    let is_module_scope = matches!(&*scope, Scope::Module { .. });
+                    let is_module_scope = scope.is_module();
                     let binding = scope.symtable_mut().entry(id.clone()).or_insert_with(|| {
                         let ptr = match is_module_scope {
                             true => {
