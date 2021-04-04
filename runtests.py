@@ -122,9 +122,10 @@ def parse_compilation_errors(stderr: str) -> t.Optional[t.Dict[int, str]]:
 
 def print_step(success: bool) -> None:
     if success:
-        print(Color.GREEN.colored('.'), end='')
+        step = Color.GREEN.colored('.')
     else:
-        print(Color.RED.colored('F'), end='')
+        step = Color.RED.colored('F')
+    print(step, end='', flush=True)
 
 
 def run_case(case: Case, test_dir: str) -> Result:
