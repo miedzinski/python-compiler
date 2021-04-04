@@ -1,0 +1,23 @@
+[case hello-world]
+print("hello world")
+
+[out]
+hello world
+
+[case missing-required-arg]
+def f(a, b, c):
+    pass
+
+f(1, 2)  # E: f() missing required argument 'c'
+
+[case unexpected-keyword-argument]
+def f(a, b, c):
+    pass
+
+f(1, 2, 3, d=1)  # E: f() got an unexpected keyword argument 'd'
+
+[case too-many-args]
+def f(a, b, c):
+    pass
+
+f(1, 2, 3, 4)  # E: f() takes 3 positional arguments but 4 were given

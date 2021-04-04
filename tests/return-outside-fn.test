@@ -1,0 +1,10 @@
+[case function]
+def f():
+    return
+
+[case module-scope]
+return  # E: 'return' outside function
+
+[case class-scope]
+class A:
+    return  # E: 'return' outside function

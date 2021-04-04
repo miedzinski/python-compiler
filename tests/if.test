@@ -1,0 +1,35 @@
+[case true]
+if True:
+    print(1)
+
+[out]
+1
+
+[case false]
+if False:
+    print(1)
+
+[case truthiness]
+if '':
+    print('')
+if 's':
+    print('s')
+if 0:
+    print(0)
+if 1:
+    print(1)
+if None:
+    print(None)
+
+[out]
+s
+1
+
+[case else]
+if False:
+    print('unreachable')
+else:
+    print('ok')
+
+[out]
+ok
