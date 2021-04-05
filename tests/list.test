@@ -1,0 +1,4 @@
+[case build]
+print([])  # O: []
+print([1])  # O: [1]
+print([1, 2])  # O: [1, 2]

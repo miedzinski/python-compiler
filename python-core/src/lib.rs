@@ -133,7 +133,7 @@ impl Display for Object {
                     write!(f, "{}", e)?
                 }
                 for e in iter {
-                    write!(f, "{}", e)?
+                    write!(f, ", {}", e)?
                 }
                 f.write_char(']')
             }

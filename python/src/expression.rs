@@ -445,8 +445,14 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
         Ok(Rc::new(obj))
     }
 
-    fn visit_list(&mut self, _node: &ast::List) -> Self::T {
-        unimplemented!()
+    fn visit_list(&mut self, node: &ast::List) -> Self::T {
+        let mut expr_visitor = ExpressionVisitor::new(self.gen);
+        let contents = node
+            .elts
+            .iter()
+            .map(|e| e.accept(&mut expr_visitor))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(self.gen.build_list(&contents))
     }
 
     fn visit_tuple(&mut self, _node: &ast::Tuple) -> Self::T {
