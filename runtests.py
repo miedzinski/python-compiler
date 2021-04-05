@@ -1,4 +1,5 @@
 import collections
+import concurrent.futures
 import dataclasses
 import enum
 import glob
@@ -252,12 +253,23 @@ def main() -> None:
     print()
 
     results = []
-    with tempfile.TemporaryDirectory(prefix='pythontest-') as test_dir:
+    with tempfile.TemporaryDirectory(
+        prefix='pythontest-'
+    ) as test_dir, concurrent.futures.ThreadPoolExecutor(
+        max_workers=os.cpu_count()
+    ) as executor:
         for path, cases in tests.items():
             print(path, end=' ')
-            for case in cases:
-                if result := run_case(case, test_dir):
-                    results.append(result)
+            futures = [
+                executor.submit(run_case, case, test_dir) for case in cases
+            ]
+            results += filter(
+                None,
+                (
+                    future.result()
+                    for future in concurrent.futures.wait(futures).done
+                ),
+            )
             print()
 
     print()
