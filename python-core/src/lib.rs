@@ -267,6 +267,17 @@ pub unsafe extern "C" fn py_gte(lhs: *const Object, rhs: *const Object) -> *cons
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn py_and(lhs: *const Object, rhs: *const Object) -> *const Object {
+    Object::Bool((*lhs).truth().to_bool() && (*rhs).truth().to_bool()).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_or(lhs: *const Object, rhs: *const Object) -> *const Object {
+    Object::Bool((*lhs).truth().to_bool() || (*rhs).truth().to_bool()).into_heap()
+}
+
+
+#[no_mangle]
 pub unsafe extern "C" fn py_assert(test: *const Object) {
     if !(*test).to_bool() {
         eprintln!("Assertion error");

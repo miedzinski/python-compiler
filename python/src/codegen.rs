@@ -140,6 +140,8 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
         self.add_runtime_fn("py_lte", 2);
         self.add_runtime_fn("py_gt", 2);
         self.add_runtime_fn("py_gte", 2);
+        self.add_runtime_fn("py_and", 2);
+        self.add_runtime_fn("py_or", 2);
         self.add_runtime_fn("py_assert", 1);
         self.add_runtime_fn("py_assert_msg", 2);
         self.module.add_function(

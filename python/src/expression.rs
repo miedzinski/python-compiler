@@ -186,8 +186,18 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
         unreachable!()
     }
 
-    fn visit_bool_op(&mut self, _node: &ast::BoolOp) -> Self::T {
-        unimplemented!()
+    fn visit_bool_op(&mut self, node: &ast::BoolOp) -> Self::T {
+        let left = node.left.accept(self)?;
+        let right = node.right.accept(self)?;
+        let fun = match node.op {
+            ast::BoolOpKind::And => "py_and",
+            ast::BoolOpKind::Or => "py_or",
+        };
+        let args = [
+            left.ptr().as_basic_value_enum(),
+            right.ptr().as_basic_value_enum(),
+        ];
+        Ok(self.gen.build_builtin_call(fun, &args))
     }
 
     fn visit_bin_op(&mut self, node: &ast::BinOp) -> Self::T {
