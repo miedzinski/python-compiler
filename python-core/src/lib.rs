@@ -1,3 +1,5 @@
+mod ops;
+
 use std::ffi::CStr;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::mem::ManuallyDrop;
@@ -6,7 +8,7 @@ use std::os::raw::c_char;
 use std::{fmt, ptr, slice};
 
 use boehm::BoehmAllocator;
-use num_bigint::{BigInt, ToBigInt};
+use num_bigint::BigInt;
 
 #[global_allocator]
 static A: BoehmAllocator = BoehmAllocator;
@@ -55,7 +57,7 @@ impl PartialEq for Reference {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Object {
     None,
     Integer(BigInt),
@@ -66,11 +68,11 @@ pub enum Object {
 }
 
 impl Object {
-    fn is_none(&self) -> bool {
+    pub fn is_none(&self) -> bool {
         matches!(self, Object::None)
     }
 
-    fn to_int(&self) -> &BigInt {
+    pub fn to_int(&self) -> &BigInt {
         if let Object::Integer(int) = self {
             int
         } else {
@@ -78,7 +80,7 @@ impl Object {
         }
     }
 
-    fn to_float(&self) -> f64 {
+    pub fn to_float(&self) -> f64 {
         if let Object::Float(float) = self {
             *float
         } else {
@@ -86,7 +88,7 @@ impl Object {
         }
     }
 
-    fn to_bool(&self) -> bool {
+    pub fn to_bool(&self) -> bool {
         if let Object::Bool(bool) = self {
             *bool
         } else {
@@ -94,7 +96,7 @@ impl Object {
         }
     }
 
-    fn to_string(&self) -> &str {
+    pub fn to_string(&self) -> &str {
         if let Object::String(str) = self {
             str
         } else {
@@ -102,7 +104,7 @@ impl Object {
         }
     }
 
-    fn to_list(&self) -> &Vec<Reference> {
+    pub fn to_list(&self) -> &Vec<Reference> {
         if let Object::List(list) = self {
             list
         } else {
@@ -110,8 +112,16 @@ impl Object {
         }
     }
 
-    fn into_heap(self) -> *const Object {
-        Box::into_raw(Box::new(self))
+    pub unsafe fn into_heap(self) -> *const Object {
+        match self {
+            x @ Object::None if NONE.is_null() => Box::into_raw(Box::new(x)),
+            Object::None => NONE,
+            x @ Object::Bool(true) if TRUE.is_null() => Box::into_raw(Box::new(x)),
+            Object::Bool(true) => TRUE,
+            x @ Object::Bool(false) if FALSE.is_null() => Box::into_raw(Box::new(x)),
+            Object::Bool(false) => FALSE,
+            x => Box::into_raw(Box::new(x)),
+        }
     }
 }
 
@@ -188,31 +198,72 @@ pub unsafe extern "C" fn py_list_from_slice(
 
 #[no_mangle]
 pub unsafe extern "C" fn py_bool(val: *const Object) -> *const Object {
-    match &*val {
-        Object::None => FALSE,
-        Object::Integer(int) if *int == 0.to_bigint().unwrap() => FALSE,
-        Object::Integer(_) => TRUE,
-        Object::Float(float) if *float == 0f64 => FALSE,
-        Object::Float(_) => TRUE,
-        bool @ Object::Bool(_) => bool,
-        Object::String(str) if str.is_empty() => FALSE,
-        Object::String(_) => TRUE,
-        Object::List(list) if list.is_empty() => FALSE,
-        Object::List(_) => TRUE,
-    }
+    (*val).truth().into_heap()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn py_add(lhs: *mut Object, rhs: *mut Object) -> *const Object {
-    let lhs = Box::from_raw(lhs);
-    let rhs = Box::from_raw(rhs);
-    match (&*lhs, &*rhs) {
-        (Object::Integer(lhs), Object::Integer(rhs)) => Object::Integer(lhs + rhs).into_heap(),
-        (Object::String(lhs), Object::String(rhs)) => {
-            Object::String(format!("{}{}", lhs, rhs)).into_heap()
-        }
-        _ => unimplemented!(),
-    }
+pub unsafe extern "C" fn py_not(val: *const Object) -> *const Object {
+    (!(&*val)).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_minus(val: *const Object) -> *const Object {
+    (-(&*val)).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_add(lhs: *const Object, rhs: *const Object) -> *const Object {
+    (&*lhs + &*rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_sub(lhs: *const Object, rhs: *const Object) -> *const Object {
+    (&*lhs - &*rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_mul(lhs: *const Object, rhs: *const Object) -> *const Object {
+    (&*lhs * &*rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_div(lhs: *const Object, rhs: *const Object) -> *const Object {
+    (&*lhs / &*rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_mod(lhs: *const Object, rhs: *const Object) -> *const Object {
+    (&*lhs % &*rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_eq(lhs: *const Object, rhs: *const Object) -> *const Object {
+    Object::Bool(*lhs == *rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_neq(lhs: *const Object, rhs: *const Object) -> *const Object {
+    Object::Bool(*lhs != *rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_lt(lhs: *const Object, rhs: *const Object) -> *const Object {
+    Object::Bool(*lhs < *rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_lte(lhs: *const Object, rhs: *const Object) -> *const Object {
+    Object::Bool(*lhs <= *rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_gt(lhs: *const Object, rhs: *const Object) -> *const Object {
+    Object::Bool(*lhs > *rhs).into_heap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_gte(lhs: *const Object, rhs: *const Object) -> *const Object {
+    Object::Bool(*lhs >= *rhs).into_heap()
 }
 
 #[no_mangle]
@@ -232,12 +283,12 @@ pub unsafe extern "C" fn py_assert_msg(test: *const Object, msg: *const Object) 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn py_print(args: *mut Object) -> *const Object {
+pub unsafe extern "C" fn py_print(args: *const Object) -> *const Object {
     if !args.is_null() {
-        let args = Box::from_raw(args);
         print!(
             "{}",
-            args.to_list()
+            (*args)
+                .to_list()
                 .iter()
                 .map(|x| format!("{}", x))
                 .collect::<Vec<_>>()

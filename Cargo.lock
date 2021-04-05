@@ -603,6 +603,7 @@ dependencies = [
  "boehm",
  "fnv",
  "num-bigint",
+ "num-traits",
 ]
 
 [[package]]

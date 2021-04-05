@@ -3,7 +3,7 @@ use std::rc::Rc;
 use anyhow::{Context, Result};
 use fnv::FnvHashMap;
 use inkwell::values::{BasicValue, InstructionOpcode};
-use inkwell::AddressSpace;
+use inkwell::{AddressSpace, IntPredicate};
 use num_bigint::{BigInt, Sign};
 use python_syntax::ast;
 use python_syntax::visitor::{Accept, Visitor};
@@ -19,6 +19,55 @@ pub struct ExpressionVisitor<'c, 'l, 'ctx> {
 impl<'c, 'l, 'ctx> ExpressionVisitor<'c, 'l, 'ctx> {
     pub fn new(gen: &'c Codegen<'l, 'ctx>) -> ExpressionVisitor<'c, 'l, 'ctx> {
         ExpressionVisitor { gen }
+    }
+}
+
+impl<'c, 'l, 'ctx> ExpressionVisitor<'c, 'l, 'ctx> {
+    fn build_operator_is(
+        &self,
+        lhs: Rc<Object<'ctx>>,
+        rhs: Rc<Object<'ctx>>,
+        negated: bool,
+    ) -> Rc<Object<'ctx>> {
+        let ptr_diff = self.gen.builder.build_ptr_diff(lhs.ptr(), rhs.ptr(), "");
+        let is_true = self.gen.builder.build_int_compare(
+            IntPredicate::EQ,
+            ptr_diff,
+            self.gen.ptr_sized_int_type().const_zero(),
+            "",
+        );
+
+        let current_block = self.gen.builder.get_insert_block().unwrap();
+        let true_block = self.gen.ctx.insert_basic_block_after(current_block, "");
+        let false_block = self.gen.ctx.insert_basic_block_after(true_block, "");
+        let merge_block = self.gen.ctx.insert_basic_block_after(true_block, "");
+
+        let (then_block, else_block) = match negated {
+            false => (true_block, false_block),
+            true => (false_block, true_block),
+        };
+        self.gen
+            .builder
+            .build_conditional_branch(is_true, then_block, else_block);
+
+        self.gen.builder.position_at_end(true_block);
+        let true_obj = self.gen.build_load_constant(Constant::True);
+        self.gen.builder.build_unconditional_branch(merge_block);
+
+        self.gen.builder.position_at_end(false_block);
+        let false_obj = self.gen.build_load_constant(Constant::False);
+        self.gen.builder.build_unconditional_branch(merge_block);
+
+        self.gen.builder.position_at_end(merge_block);
+        let phi = self.gen.builder.build_phi(self.gen.ref_type(), "");
+        phi.add_incoming(&[
+            (&true_obj.ptr(), true_block),
+            (&false_obj.ptr(), false_block),
+        ]);
+
+        Rc::new(Object::Instance {
+            ptr: phi.as_basic_value().into_pointer_value(),
+        })
     }
 }
 
@@ -144,19 +193,31 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
     fn visit_bin_op(&mut self, node: &ast::BinOp) -> Self::T {
         let left = node.left.accept(self)?;
         let right = node.right.accept(self)?;
-        match node.op {
-            ast::OpKind::Addition => {
-                let args = [
-                    left.ptr().as_basic_value_enum(),
-                    right.ptr().as_basic_value_enum(),
-                ];
-                Ok(self.gen.build_builtin_call("py_add", &args))
-            }
-            _ => unimplemented!(),
-        }
+        let fun = match node.op {
+            ast::OpKind::Addition => "py_add",
+            ast::OpKind::Subtraction => "py_sub",
+            ast::OpKind::Multiplication => "py_mul",
+            ast::OpKind::Division => "py_div",
+            ast::OpKind::Modulo => "py_mod",
+            op => bail_with_node!(node, "{} not implemented", op),
+        };
+        let args = [
+            left.ptr().as_basic_value_enum(),
+            right.ptr().as_basic_value_enum(),
+        ];
+        Ok(self.gen.build_builtin_call(fun, &args))
     }
-    fn visit_unary_op(&mut self, _node: &ast::UnaryOp) -> Self::T {
-        unimplemented!()
+
+    fn visit_unary_op(&mut self, node: &ast::UnaryOp) -> Self::T {
+        let mut expr_visitor = ExpressionVisitor::new(self.gen);
+        let operand = node.operand.accept(&mut expr_visitor)?;
+        let fun = match node.op {
+            ast::UnaryOpKind::Not => "py_not",
+            ast::UnaryOpKind::Minus => "py_minus",
+            op => bail_with_node!(node, "{} not implemented", op),
+        };
+        let args = [operand.ptr().as_basic_value_enum()];
+        Ok(self.gen.build_builtin_call(fun, &args))
     }
 
     fn visit_lambda(&mut self, _node: &ast::Lambda) -> Self::T {
@@ -203,8 +264,33 @@ impl<'c, 'l, 'ctx> Visitor for ExpressionVisitor<'c, 'l, 'ctx> {
         unimplemented!()
     }
 
-    fn visit_compare(&mut self, _node: &ast::Compare) -> Self::T {
-        unimplemented!()
+    fn visit_compare(&mut self, node: &ast::Compare) -> Self::T {
+        let mut expr_visitor = ExpressionVisitor::new(self.gen);
+        let left = node.left.accept(&mut expr_visitor)?;
+        let mut iter = node.ops.iter().zip(node.comparators.iter());
+        let (op, right) = iter.next().unwrap();
+
+        if iter.next().is_some() {
+            bail_with_node!(node, "chained comparisons not implemented")
+        }
+
+        let right = right.accept(&mut expr_visitor)?;
+        let fun = match op {
+            ast::ComparisonOpKind::Equal => "py_eq",
+            ast::ComparisonOpKind::NotEqual => "py_neq",
+            ast::ComparisonOpKind::Less => "py_lt",
+            ast::ComparisonOpKind::LessEqual => "py_lte",
+            ast::ComparisonOpKind::Greater => "py_gt",
+            ast::ComparisonOpKind::GreaterEqual => "py_gte",
+            ast::ComparisonOpKind::Is => return Ok(self.build_operator_is(left, right, false)),
+            ast::ComparisonOpKind::IsNot => return Ok(self.build_operator_is(left, right, true)),
+            op => bail_with_node!(node, "{} not implemented", op),
+        };
+        let args = [
+            left.ptr().as_basic_value_enum(),
+            right.ptr().as_basic_value_enum(),
+        ];
+        Ok(self.gen.build_builtin_call(fun, &args))
     }
 
     fn visit_call(&mut self, node: &ast::Call) -> Self::T {

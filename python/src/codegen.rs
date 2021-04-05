@@ -127,7 +127,19 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             None,
         );
         self.add_runtime_fn("py_bool", 1);
+        self.add_runtime_fn("py_not", 1);
+        self.add_runtime_fn("py_minus", 1);
         self.add_runtime_fn("py_add", 2);
+        self.add_runtime_fn("py_sub", 2);
+        self.add_runtime_fn("py_mul", 2);
+        self.add_runtime_fn("py_div", 2);
+        self.add_runtime_fn("py_mod", 2);
+        self.add_runtime_fn("py_eq", 2);
+        self.add_runtime_fn("py_neq", 2);
+        self.add_runtime_fn("py_lt", 2);
+        self.add_runtime_fn("py_lte", 2);
+        self.add_runtime_fn("py_gt", 2);
+        self.add_runtime_fn("py_gte", 2);
         self.add_runtime_fn("py_assert", 1);
         self.add_runtime_fn("py_assert_msg", 2);
         self.module.add_function(

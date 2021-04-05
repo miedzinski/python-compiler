@@ -11,3 +11,4 @@ crate-type = ["staticlib"]
 boehm = { path = "../boehm" }
 fnv = "1.0.3"
 num-bigint = "0.3"
+num-traits = "0.2"
