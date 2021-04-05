@@ -35,6 +35,7 @@ class Case:
     source: str
     errors: dict
     out: str
+    skip: bool
 
 
 @dataclasses.dataclass
@@ -73,8 +74,11 @@ def parse_case(file: str, lines: t.List[str]) -> Case:
     source = '\n'.join(source_lines) + '\n'
     errors = {}
     out_lines = []
+    skip = False
 
     for (idx, line) in enumerate(source_lines, start=1):
+        if line == '[skip]':
+            skip = True
         match = re.search(r'# (?:E: (?P<error>.*))|(?:O: (?P<out>.*))', line)
         if not match:
             continue
@@ -92,7 +96,7 @@ def parse_case(file: str, lines: t.List[str]) -> Case:
     if out:
         out += '\n'
 
-    return Case(file, name, source, errors, out)
+    return Case(file, name, source, errors, out, skip)
 
 
 def collect() -> t.DefaultDict[str, t.List[Case]]:
@@ -139,6 +143,8 @@ def print_step(success: bool) -> None:
 
 
 def run_case(case: Case, test_dir: str) -> Result:
+    if case.skip:
+        print(Color.YELLOW.colored('S'), end='')
     nonce = secrets.token_hex(4)
     binary_path = os.path.join(test_dir, f'case-{nonce}')
     source_path = f'{binary_path}.py'
