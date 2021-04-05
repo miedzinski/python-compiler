@@ -216,6 +216,22 @@ pub unsafe extern "C" fn py_add(lhs: *mut Object, rhs: *mut Object) -> *const Ob
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn py_assert(test: *const Object) {
+    if !(*test).to_bool() {
+        eprintln!("Assertion error");
+        std::process::exit(1)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn py_assert_msg(test: *const Object, msg: *const Object) {
+    if !(*test).to_bool() {
+        eprintln!("Assertion error: {}", (*msg).to_string());
+        std::process::exit(1)
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn py_print(args: *mut Object) -> *const Object {
     if !args.is_null() {
         let args = Box::from_raw(args);

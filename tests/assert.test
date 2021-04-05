@@ -1,0 +1,8 @@
+[case assert-false]
+assert False  # O: Assertion error
+
+[case assert-true]
+assert True
+
+[case assert-msg]
+assert False, 'msg'  # O: Assertion error: msg

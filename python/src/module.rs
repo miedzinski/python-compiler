@@ -347,6 +347,25 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
 
     fn visit_assert(&mut self, node: &ast::Assert) -> Self::T {
         visitor::walk_assert(self, node);
+        let mut expr_visitor = ExpressionVisitor::new(self.gen);
+        let test = node.test.accept(&mut expr_visitor)?;
+        let msg = match &node.msg {
+            Some(msg) => Some(msg.accept(&mut expr_visitor)?),
+            _ => None,
+        };
+        msg.map(|x| {
+            self.gen.build_builtin_call(
+                "py_assert_msg",
+                &[
+                    test.ptr().as_basic_value_enum(),
+                    x.ptr().as_basic_value_enum(),
+                ],
+            )
+        })
+        .unwrap_or_else(|| {
+            self.gen
+                .build_builtin_call("py_assert", &[test.ptr().as_basic_value_enum()])
+        });
         Ok(())
     }
 

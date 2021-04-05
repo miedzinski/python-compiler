@@ -82,23 +82,6 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
         self.module
             .add_function("py_init", self.ctx.void_type().fn_type(&[], false), None);
         self.module.add_function(
-            "py_add",
-            self.ref_type().fn_type(
-                &[
-                    self.ref_type().as_basic_type_enum(),
-                    self.ref_type().as_basic_type_enum(),
-                ],
-                false,
-            ),
-            None,
-        );
-        self.module.add_function(
-            "py_bool",
-            self.ref_type()
-                .fn_type(&[self.ref_type().as_basic_type_enum()], false),
-            None,
-        );
-        self.module.add_function(
             "py_int_from_bytes",
             self.ref_type().fn_type(
                 &[
@@ -143,10 +126,23 @@ impl<'l, 'ctx> Codegen<'l, 'ctx> {
             ),
             None,
         );
+        self.add_runtime_fn("py_bool", 1);
+        self.add_runtime_fn("py_add", 2);
+        self.add_runtime_fn("py_assert", 1);
+        self.add_runtime_fn("py_assert_msg", 2);
         self.module.add_function(
             "py_print",
             self.ref_type()
                 .fn_type(&[self.ref_type().as_basic_type_enum()], false),
+            None,
+        );
+    }
+
+    fn add_runtime_fn(&self, name: &str, arity: usize) {
+        self.module.add_function(
+            name,
+            self.ref_type()
+                .fn_type(&vec![self.ref_type().as_basic_type_enum(); arity], false),
             None,
         );
     }
