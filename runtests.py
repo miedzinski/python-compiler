@@ -71,14 +71,15 @@ def parse_case(file: str, lines: t.List[str]) -> Case:
     header = next(lines)
     name = header[len('[case ') : -1]
     source_lines = list(itertools.takewhile(lambda x: x != '[out]', lines))
+    skip = False
+    if source_lines[0] == '[skip]':
+        skip = True
+        source_lines = source_lines[1:]
     source = '\n'.join(source_lines) + '\n'
     errors = {}
     out_lines = []
-    skip = False
 
     for (idx, line) in enumerate(source_lines, start=1):
-        if line == '[skip]':
-            skip = True
         match = re.search(r'# (?:E: (?P<error>.*))|(?:O: (?P<out>.*))', line)
         if not match:
             continue
@@ -142,9 +143,10 @@ def print_step(success: bool) -> None:
     print(step, end='', flush=True)
 
 
-def run_case(case: Case, test_dir: str) -> Result:
+def run_case(case: Case, test_dir: str) -> t.Optional[Result]:
     if case.skip:
         print(Color.YELLOW.colored('S'), end='')
+        return
     nonce = secrets.token_hex(4)
     binary_path = os.path.join(test_dir, f'case-{nonce}')
     source_path = f'{binary_path}.py'
@@ -254,7 +256,8 @@ def main() -> None:
         for path, cases in tests.items():
             print(path, end=' ')
             for case in cases:
-                results.append(run_case(case, test_dir))
+                if result := run_case(case, test_dir):
+                    results.append(result)
             print()
 
     print()
