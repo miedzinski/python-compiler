@@ -72,13 +72,23 @@ def parse_case(file: str, lines: t.List[str]) -> Case:
     source_lines = list(itertools.takewhile(lambda x: x != '[out]', lines))
     source = '\n'.join(source_lines) + '\n'
     errors = {}
+    out_lines = []
 
     for (idx, line) in enumerate(source_lines, start=1):
-        match = re.search('# E: (.*)', line)
-        if match:
-            errors[idx] = match[1]
+        match = re.search(r'# (?:E: (?P<error>.*))|(?:O: (?P<out>.*))', line)
+        if not match:
+            continue
+        if error := match['error']:
+            errors[idx] = error
+        if out_line := match['out']:
+            out_lines.append(out_line)
 
     out = '\n'.join(lines).rstrip()
+
+    assert not (out_lines and out), f'Mixed output definition in {file}::{name}'
+
+    if not out:
+        out = '\n'.join(out_lines)
     if out:
         out += '\n'
 

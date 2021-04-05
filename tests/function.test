@@ -1,8 +1,5 @@
 [case hello-world]
-print("hello world")
-
-[out]
-hello world
+print("hello world")  # O: hello world
 
 [case missing-required-arg]
 def f(a, b, c):
