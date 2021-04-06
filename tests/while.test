@@ -1,0 +1,45 @@
+[case false]
+while False:
+    print('loop')
+
+[case once]
+x = True
+while x:
+    print('loop')
+    x = False
+
+print('after')
+
+[out]
+loop
+after
+
+[case enumerate]
+i = 0
+while i < 3:
+    print(i)
+    i = i + 1
+
+[out]
+0
+1
+2
+
+[case else-empty-loop]
+while False:
+    pass
+else:
+    print('else')
+
+[out]
+else
+
+[case else-looped]
+x = True
+while x:
+    x = False
+else:
+    print('else')
+
+[out]
+else

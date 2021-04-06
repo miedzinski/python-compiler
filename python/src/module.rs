@@ -267,7 +267,55 @@ impl<'c, 'l, 'ctx> Visitor for ModuleVisitor<'c, 'l, 'ctx> {
     }
 
     fn visit_while(&mut self, node: &ast::While) -> Self::T {
-        visitor::walk_while(self, node);
+        let current_block = self.gen.builder.get_insert_block().unwrap();
+        let test_block = self.gen.ctx.insert_basic_block_after(current_block, "");
+        let body_block = self.gen.ctx.insert_basic_block_after(test_block, "");
+        let merge_block = self.gen.ctx.insert_basic_block_after(body_block, "");
+        let else_block = match node.orelse.is_empty() {
+            true => merge_block,
+            false => self.gen.ctx.prepend_basic_block(merge_block, ""),
+        };
+
+        let mut expr_visitor = ExpressionVisitor::new(self.gen);
+        self.gen.builder.build_unconditional_branch(test_block);
+        self.gen.builder.position_at_end(test_block);
+        let test = node.test.accept(&mut expr_visitor)?;
+        let evaluated_test = self
+            .gen
+            .build_builtin_call("py_bool", &[test.ptr().as_basic_value_enum()]);
+        let ptr_diff = self.gen.builder.build_ptr_diff(
+            evaluated_test.ptr(),
+            self.gen.build_load_constant(Constant::True).ptr(),
+            "",
+        );
+        let is_true = self.gen.builder.build_int_compare(
+            IntPredicate::EQ,
+            ptr_diff,
+            self.gen.ptr_sized_int_type().const_zero(),
+            "",
+        );
+        self.gen
+            .builder
+            .build_conditional_branch(is_true, body_block, else_block);
+
+        self.gen.builder.position_at_end(body_block);
+        self.visit_statements(&node.body)?;
+        if !self.seen_return {
+            self.gen.builder.build_unconditional_branch(test_block);
+        }
+        self.seen_return = false;
+
+        if !node.orelse.is_empty() {
+            self.gen.builder.position_at_end(else_block);
+            self.visit_statements(&node.orelse)?;
+            if !self.seen_return {
+                self.gen.builder.build_unconditional_branch(merge_block);
+            }
+        }
+
+        self.gen.builder.position_at_end(merge_block);
+        self.seen_return = false;
+
         Ok(())
     }
 
