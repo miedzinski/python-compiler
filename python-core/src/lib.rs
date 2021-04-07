@@ -276,21 +276,22 @@ pub unsafe extern "C" fn py_or(lhs: *const Object, rhs: *const Object) -> *const
     Object::Bool((*lhs).truth().to_bool() || (*rhs).truth().to_bool()).into_heap()
 }
 
-
 #[no_mangle]
-pub unsafe extern "C" fn py_assert(test: *const Object) {
+pub unsafe extern "C" fn py_assert(test: *const Object) -> *const Object {
     if !(*test).to_bool() {
         eprintln!("Assertion error");
         std::process::exit(1)
     }
+    NONE
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn py_assert_msg(test: *const Object, msg: *const Object) {
+pub unsafe extern "C" fn py_assert_msg(test: *const Object, msg: *const Object) -> *const Object {
     if !(*test).to_bool() {
         eprintln!("Assertion error: {}", (*msg).to_string());
         std::process::exit(1)
     }
+    NONE
 }
 
 #[no_mangle]
